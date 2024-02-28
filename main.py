@@ -1,17 +1,18 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QSlider
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget, QSlider, QPushButton
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, filtfilt, welch
 
 class SuperheterodyneReceiver(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Супергетеродинный Приёмник")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 1200, 600)  # Increased width for accommodating frequency plots
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout()
@@ -48,6 +49,9 @@ class SuperheterodyneReceiver(QMainWindow):
         self.layout.addWidget(self.noise_amplitude_slider)
         self.intermediate_frequency_label = QLabel("Промежуточная частота")
         self.layout.addWidget(self.intermediate_frequency_label)
+        self.open_img = QPushButton('Показать схему супергетеродинного приёмника')
+        self.open_img.clicked.connect(self.show_img)
+        self.layout.addWidget(self.open_img)        
         self.intermediate_frequency_value = QLabel()
         self.layout.addWidget(self.intermediate_frequency_value)
         self.canvas_signal = FigureCanvas(plt.Figure())
@@ -76,30 +80,49 @@ class SuperheterodyneReceiver(QMainWindow):
         noise = np.random.normal(0, noise_amplitude, len(time))
         mixed_signal_with_noise = mixed_signal + noise
         filtered_signal = self.filter_signal(mixed_signal_with_noise)
+        self.clear_subplots()
+        self.plot_time_domain_signals(time, signal, mixed_signal_with_noise, filtered_signal)
+        self.plot_frequency_domain_signals(signal, mixed_signal_with_noise, filtered_signal)
+        self.draw_canvases(intermediate_freq)
+
+    def clear_subplots(self):
         self.canvas_signal.figure.clear()
         self.canvas_mixed_signal.figure.clear()
         self.canvas_filtered_signal.figure.clear()
-        ax1 = self.canvas_signal.figure.add_subplot(111)
-        ax2 = self.canvas_mixed_signal.figure.add_subplot(111)
-        ax3 = self.canvas_filtered_signal.figure.add_subplot(111)
+
+    def plot_time_domain_signals(self, time, signal, mixed_signal_with_noise, filtered_signal):
+        ax1 = self.canvas_signal.figure.add_subplot(231)
+        ax2 = self.canvas_mixed_signal.figure.add_subplot(231)
+        ax3 = self.canvas_filtered_signal.figure.add_subplot(231)
         ax1.plot(time, signal, label='Исходный сигнал')
         ax2.plot(time, mixed_signal_with_noise, label='Смешанный сигнал с шумом')
         ax3.plot(time, filtered_signal, label='Отфильтрованный сигнал')
-        ax1.set_xlabel('Время')
-        ax1.set_ylabel('Амплитуда')
-        ax1.set_title('Исходный сигнал')
-        ax1.legend()
-        ax1.grid(True)
-        ax2.set_xlabel('Время')
-        ax2.set_ylabel('Амплитуда')
-        ax2.set_title('Смешанный сигнал с шумом')
-        ax2.legend()
-        ax2.grid(True)
-        ax3.set_xlabel('Время')
-        ax3.set_ylabel('Амплитуда')
-        ax3.set_title('Отфильтрованный сигнал')
-        ax3.legend()
-        ax3.grid(True)
+        self.set_common_properties(ax1, 'Исходный сигнал')
+        self.set_common_properties(ax2, 'Смешанный сигнал с шумом')
+        self.set_common_properties(ax3, 'Отфильтрованный сигнал')
+
+    def plot_frequency_domain_signals(self, signal, mixed_signal_with_noise, filtered_signal):
+        f_signal, Pxx_signal = welch(signal, fs=500)
+        f_mixed_signal, Pxx_mixed_signal = welch(mixed_signal_with_noise, fs=500)
+        f_filtered_signal, Pxx_filtered_signal = welch(filtered_signal, fs=500)
+        ax4 = self.canvas_signal.figure.add_subplot(233)
+        ax5 = self.canvas_mixed_signal.figure.add_subplot(233)
+        ax6 = self.canvas_filtered_signal.figure.add_subplot(233)
+        ax4.semilogy(f_signal, Pxx_signal)
+        ax5.semilogy(f_mixed_signal, Pxx_mixed_signal)
+        ax6.semilogy(f_filtered_signal, Pxx_filtered_signal)
+        self.set_common_properties(ax4, 'Спектр исходного сигнала')
+        self.set_common_properties(ax5, 'Спектр смешанного сигнала с шумом')
+        self.set_common_properties(ax6, 'Спектр отфильтрованного сигнала')
+
+    def set_common_properties(self, ax, title):
+        ax.set_xlabel('Частота (Гц)' if title.startswith('Спектр') else 'Время')
+        ax.set_ylabel('Амплитуда' if title.startswith('Спектр') else 'Амплитуда')
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True)
+
+    def draw_canvases(self, intermediate_freq):
         self.canvas_signal.draw()
         self.canvas_mixed_signal.draw()
         self.canvas_filtered_signal.draw()
@@ -114,6 +137,17 @@ class SuperheterodyneReceiver(QMainWindow):
         b, a = butter(order, normal_cutoff, btype='low', analog=False)
         filtered_signal = filtfilt(b, a, signal)
         return filtered_signal
+    
+    def show_img(self):
+        image_window = QWidget()
+        image_window.setWindowTitle("Cхема супергетеродинного приёмника")
+        image_label = QLabel(image_window)
+        pixmap = QPixmap("scale_1200.png")  
+        image_label.setPixmap(pixmap)
+        layout = QVBoxLayout()
+        layout.addWidget(image_label)
+        image_window.setLayout(layout)
+        image_window.show()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
